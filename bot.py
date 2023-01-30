@@ -20,6 +20,12 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await context.bot.send_message(chat_id=update.effective_chat.id,
                                    text="ברוכים הבאים לבוט של גורדי ויובי")
 
+async def available_questions(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Shows the available questions from the database"""
+    df = pd.read_csv(config["rules"])
+    for question in df.Question.unique():
+        await context.bot.send_message(chat_id=update.effective_chat.id, text=question)
+
 async def answer_questions(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Answers questions from the database using fuzzy partial ratio string searching"""
     
@@ -46,7 +52,9 @@ def main():
     app = ApplicationBuilder().token(config["token"]).build()
     start_handler = CommandHandler('start', start)
     questions_handler = MessageHandler(filters.TEXT & ~(filters.COMMAND), answer_questions)
+    available_questions_handler = CommandHandler('questions', available_questions)
     app.add_handler(start_handler)
+    app.add_handler(available_questions_handler)
     app.add_handler(questions_handler)
     app.run_polling()
 
