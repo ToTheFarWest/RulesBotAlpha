@@ -29,7 +29,7 @@ async def available_questions(update: Update, context: ContextTypes.DEFAULT_TYPE
 
 
 async def answer_questions(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Answers questions from the database using fuzzy partial ratio string searching"""
+    """Answers questions from the database using fuzzy weighted ratio string searching"""
 
     # Get csv data from file
     df = pd.read_csv(config["rules"])
@@ -38,17 +38,23 @@ async def answer_questions(update: Update, context: ContextTypes.DEFAULT_TYPE):
     # TWEAK THE SEARCH ALGORITHM HERE
     questions = list(df.Question)
     matched_question = process.extractOne(
-        update.message.text, questions, scorer=fuzz.token_sort_ratio, score_cutoff=70)
+        update.message.text, questions, scorer=fuzz.WRatio, score_cutoff=70)
 
     # Send each message from the matched question to the user if a match was found
     if matched_question:
         # Log the matched question
-        logging.info(f"User {update.message.from_user.first_name} sent message {update.message.text}, \
-         closest match to question {matched_question[0]} with probability {matched_question[1]}")
+        logging.info("User %s sent message %s, matched question %s with probability %d" %
+                     (update.message.from_user.first_name, update.message.text, matched_question[0], matched_question[1]))
         results = df[df.Question == matched_question[0]]
         for result_message in results.Sentence:
             await context.bot.send_message(chat_id=update.effective_chat.id, text=result_message)
     else:
+
+        # Log the query and the score
+        matched_question = process.extractOne(
+            update.message.text, questions, scorer=fuzz.WRatio)
+        logging.warn("User %s sent message %s, most closely matched question %s with probability %d" %
+                      (update.message.from_user.first_name, update.message.text, matched_question[0], matched_question[1]))
         await context.bot.send_message(chat_id=update.effective_chat.id, text="סליחה, לא הצלחנו לענות על שאלתך. יש לפנות למפקידך או לרסר לקבלת מענה")
         await context.bot.send_message(chat_id=update.effective_chat.id, text="אוהבים, ג'ורדי ויובי 🇸🇭")
 
