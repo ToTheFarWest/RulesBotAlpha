@@ -18,7 +18,7 @@ logging.basicConfig(
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Implements /start command"""
     await context.bot.send_message(chat_id=update.effective_chat.id,
-                                   text="ברוכים הבאים לבוט של גורדי ויובי")
+                                   text="ברוכים הבאים לבוט של גורדי ויובי. כדי לראות רשימה של שאלות אפשריות, יש להזין /questions")
 
 
 async def available_questions(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -54,12 +54,12 @@ async def answer_questions(update: Update, context: ContextTypes.DEFAULT_TYPE):
         matched_question = process.extractOne(
             update.message.text, questions, scorer=fuzz.WRatio)
         logging.warn("User %s sent message %s, most closely matched question %s with probability %d" %
-                      (update.message.from_user.first_name, update.message.text, matched_question[0], matched_question[1]))
+                     (update.message.from_user.first_name, update.message.text, matched_question[0], matched_question[1]))
         await context.bot.send_message(chat_id=update.effective_chat.id, text="סליחה, לא הצלחנו לענות על שאלתך. יש לפנות למפקידך או לרסר לקבלת מענה")
-        await context.bot.send_message(chat_id=update.effective_chat.id, text="אוהבים, ג'ורדי ויובי 🇸🇭")
+    await context.bot.send_message(chat_id=update.effective_chat.id, text="אוהבים, ג'ורדי ויובי 🇸🇭")
 
-        with open(config["authors"], "rb") as authors:
-            await context.bot.send_photo(chat_id=update.effective_chat.id, photo=authors)
+    with open(config["authors"], "rb") as authors:
+        await context.bot.send_photo(chat_id=update.effective_chat.id, photo=authors)
 
 
 def main():
