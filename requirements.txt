@@ -1,3 +1,5 @@
 thefuzz
 requests
 python-Levenshtein
+python-telegram-bot
+pandas
