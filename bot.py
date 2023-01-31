@@ -15,6 +15,27 @@ logging.basicConfig(
 )
 
 
+# Decorator function requiring admin access to a handle
+def admin_required(func):
+    async def wrapper(*args, **kwargs):
+        update: Update = args[0]
+        context: ContextTypes.DEFAULT_TYPE = args[1]
+
+        with open(config["admins"]) as admin_file:
+            admins = [int(id) for id in admin_file.read().splitlines()]
+
+        if update.effective_user.id in admins:
+            await func(*args, **kwargs)
+            logging.info("User %s (ID: %d) ran protected command %s" % (
+                update.effective_user.first_name, update.effective_user.id, update.message.text))
+        else:
+            logging.info(
+                "User %s (ID: %d) tried to run protected command %s but did not have permissions!" % (update.effective_user.first_name, update.effective_user.id, update.message.text))
+            await context.bot.send_message(chat_id=update.effective_chat.id, text="אין לך הרשאות לכך.")
+
+    return wrapper
+
+
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Implements /start command"""
     await context.bot.send_message(chat_id=update.effective_chat.id,
@@ -34,7 +55,7 @@ async def answer_questions(update: Update, context: ContextTypes.DEFAULT_TYPE):
     # Get csv data from file
     df = pd.read_csv(config["rules"])
 
-    # Extract the QuestionID of the question closest matching the user's message
+    # Extract the question closest matching the user's message
     # TWEAK THE SEARCH ALGORITHM HERE
     questions = list(df.Question)
     matched_question = process.extractOne(
