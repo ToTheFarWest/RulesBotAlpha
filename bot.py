@@ -25,7 +25,8 @@ async def available_questions(update: Update, context: ContextTypes.DEFAULT_TYPE
     """Shows the available questions from the database"""
     df = pd.read_csv(config["rules"])
     for question in df.Question.unique():
-        await context.bot.send_message(chat_id=update.effective_chat.id, text=question)
+        if question not in ["עד מתי?"]:
+            await context.bot.send_message(chat_id=update.effective_chat.id, text=question)
 
 
 async def answer_questions(update: Update, context: ContextTypes.DEFAULT_TYPE):
