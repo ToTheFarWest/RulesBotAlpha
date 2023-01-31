@@ -2,8 +2,10 @@
 
 # Imports
 import logging
-from telegram import Update
-from telegram.ext import filters, ApplicationBuilder, ContextTypes, CommandHandler, MessageHandler
+from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
+from telegram.ext import (filters, ApplicationBuilder, ContextTypes,
+                          CommandHandler, MessageHandler, ConversationHandler,
+                          CallbackQueryHandler)
 from config import config
 import pandas as pd
 from thefuzz import process, fuzz
@@ -14,9 +16,12 @@ logging.basicConfig(
     level=logging.INFO
 )
 
+# Conversation states for add_question conversation handler
+QUESTION, REPLIES, CONFIRM = range(3)
 
-# Decorator function requiring admin access to a handle
-def admin_required(func):
+
+def admin_required(func) -> function:
+    """Decorator function for requiring admin access"""
     async def wrapper(*args, **kwargs):
         update: Update = args[0]
         context: ContextTypes.DEFAULT_TYPE = args[1]
@@ -35,21 +40,64 @@ def admin_required(func):
 
     return wrapper
 
+# Functions for new_question conversation handler
 
-async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
+
+@admin_required
+async def new_question(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    """Allows an admin user to add a new question to the bot"""
+    await update.message.reply_text("היי מנהל יקר, איזה שאלה תרצה להוסיף? תזין /cancel בכל עת בתהליך כדי לבטל את הפעולה.")
+    return QUESTION
+
+
+async def add_question(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    """Gets the new question from the user and saves it to the user_data"""
+    question = update.message.text
+    context.user_data["question"] = question
+    await update.message.reply_text("תתחיל לכתוב את התשובה. התשובה יכולה להיות מספר הודעות. על מנת לסמן לי שסיימת לכתוב תשובות, יש לשלוח /done.")
+    return REPLIES
+
+
+async def add_reply(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    """Gets new replies for the question from the user and saves them to user_data"""
+    reply = update.message.text
+    
+    # Initializes the list of replies
+    if not context.user_data["replies"]:
+        context.user_data["replies"] = []
+    
+    # Adds the reply
+    context.user_data["replies"].append(reply)
+
+    # Continues the loop in conversation state
+    return REPLIES
+
+
+async def finish_add_question(update: Update, context: ContextTypes) -> int:
+    user_data = context.user_data
+    question = user_data["question"]
+    replies = user_data["replies"]
+    logging.info("User %s added new question %s" % (update.effective_user.first_name, question))
+    df = pd.read_csv(config["rules"])
+    
+    return ConversationHandler.END
+# Normal command handlers
+async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Implements /start command"""
     await context.bot.send_message(chat_id=update.effective_chat.id,
                                    text="ברוכים הבאים לבוט של גורדי ויובי. כדי לראות רשימה של שאלות אפשריות, יש להזין /questions")
 
 
-async def available_questions(update: Update, context: ContextTypes.DEFAULT_TYPE):
+async def available_questions(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Shows the available questions from the database"""
     df = pd.read_csv(config["rules"])
     for question in df.Question.unique():
         await context.bot.send_message(chat_id=update.effective_chat.id, text=question)
 
+# Message handlers
 
-async def answer_questions(update: Update, context: ContextTypes.DEFAULT_TYPE):
+
+async def answer_questions(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Answers questions from the database using fuzzy weighted ratio string searching"""
 
     # Get csv data from file
@@ -83,14 +131,28 @@ async def answer_questions(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await context.bot.send_photo(chat_id=update.effective_chat.id, photo=authors)
 
 
-def main():
+def main() -> None:
     app = ApplicationBuilder().token(config["token"]).build()
     start_handler = CommandHandler('start', start)
+    new_question_conv_handler = ConversationHandler(
+        entry_points=[CommandHandler("new-question", new_question)],
+        states={
+            QUESTION: [
+                MessageHandler(filters.TEXT & ~filters.COMMAND, add_question)
+            ],
+            REPLIES: [
+                MessageHandler(filters.TEXT & ~filters.COMMAND, add_reply),
+                CommandHandler("done", finish_add_question)
+            ]
+        },
+        fallbacks=[CommandHandler("cancel", cancel_add_question)]
+    )
     questions_handler = MessageHandler(
         filters.TEXT & ~(filters.COMMAND), answer_questions)
     available_questions_handler = CommandHandler(
         'questions', available_questions)
     app.add_handler(start_handler)
+    app.add_handler(new_question_conv_handler)
     app.add_handler(available_questions_handler)
     app.add_handler(questions_handler)
     app.run_polling()
