@@ -20,27 +20,25 @@ logging.basicConfig(
 QUESTION, REPLIES, CONFIRM = range(3)
 
 
-def admin_required(func) -> function:
+def admin_required(func: callable) -> callable:
     """Decorator function for requiring admin access"""
     async def wrapper(*args, **kwargs):
         update: Update = args[0]
         context: ContextTypes.DEFAULT_TYPE = args[1]
 
-        with open(config["admins"]) as admin_file:
+        with open(config["admins"], encoding="utf-8") as admin_file:
             admins = [int(id) for id in admin_file.read().splitlines()]
 
         if update.effective_user.id in admins:
-            await func(*args, **kwargs)
-            logging.info("User %s (ID: %d) ran protected command %s" % (
-                update.effective_user.first_name, update.effective_user.id, update.message.text))
+            logging.info("User %s (ID: %d) ran protected command %s",
+                         update.effective_user.first_name, update.effective_user.id, update.message.text)
+            return await func(*args, **kwargs)
         else:
             logging.info(
-                "User %s (ID: %d) tried to run protected command %s but did not have permissions!" % (update.effective_user.first_name, update.effective_user.id, update.message.text))
+                "User %s (ID: %d) tried to run protected command %s but did not have permissions!", update.effective_user.first_name, update.effective_user.id, update.message.text)
             await context.bot.send_message(chat_id=update.effective_chat.id, text="אין לך הרשאות לכך.")
 
     return wrapper
-
-# Functions for new_question conversation handler
 
 
 @admin_required
@@ -61,11 +59,11 @@ async def add_question(update: Update, context: ContextTypes.DEFAULT_TYPE) -> in
 async def add_reply(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     """Gets new replies for the question from the user and saves them to user_data"""
     reply = update.message.text
-    
+
     # Initializes the list of replies
-    if not context.user_data["replies"]:
+    if not "replies" in context.user_data:
         context.user_data["replies"] = []
-    
+
     # Adds the reply
     context.user_data["replies"].append(reply)
 
@@ -77,11 +75,31 @@ async def finish_add_question(update: Update, context: ContextTypes) -> int:
     user_data = context.user_data
     question = user_data["question"]
     replies = user_data["replies"]
-    logging.info("User %s added new question %s" % (update.effective_user.first_name, question))
+    logging.info("User %s added new question %s",
+                 update.effective_user.first_name, question)
     df = pd.read_csv(config["rules"])
-    
+    df2 = pd.DataFrame(
+        [[question, reply] for reply in replies],
+        columns=df.columns
+    )
+    df = pd.concat([df, df2])
+    df.to_csv(config["rules"], index=False)
+
+    # Cleanup
+    await update.message.reply_text("היידה, הוספת שאלה חדשה!")
+    user_data.clear()
     return ConversationHandler.END
-# Normal command handlers
+
+
+async def cancel(update: Update, context: ContextTypes) -> int:
+    user_data = context.user_data
+    user_data.clear()
+    logging.info("User %s cancelled the question adding conversation",
+                 (update.effective_user.first_name))
+    await update.message.reply_text(text="אין בעיה, ביטלתי.")
+    return ConversationHandler.END
+
+
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Implements /start command"""
     await context.bot.send_message(chat_id=update.effective_chat.id,
@@ -93,8 +111,6 @@ async def available_questions(update: Update, context: ContextTypes.DEFAULT_TYPE
     df = pd.read_csv(config["rules"])
     for question in df.Question.unique():
         await context.bot.send_message(chat_id=update.effective_chat.id, text=question)
-
-# Message handlers
 
 
 async def answer_questions(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -112,8 +128,8 @@ async def answer_questions(update: Update, context: ContextTypes.DEFAULT_TYPE) -
     # Send each message from the matched question to the user if a match was found
     if matched_question:
         # Log the matched question
-        logging.info("User %s sent message %s, matched question %s with probability %d" %
-                     (update.message.from_user.first_name, update.message.text, matched_question[0], matched_question[1]))
+        logging.info("User %s sent message %s, matched question %s with probability %d",
+                     update.message.from_user.first_name, update.message.text, matched_question[0], matched_question[1])
         results = df[df.Question == matched_question[0]]
         for result_message in results.Sentence:
             await context.bot.send_message(chat_id=update.effective_chat.id, text=result_message)
@@ -122,8 +138,8 @@ async def answer_questions(update: Update, context: ContextTypes.DEFAULT_TYPE) -
         # Log the query and the score
         matched_question = process.extractOne(
             update.message.text, questions, scorer=fuzz.WRatio)
-        logging.warn("User %s sent message %s, most closely matched question %s with probability %d" %
-                     (update.message.from_user.first_name, update.message.text, matched_question[0], matched_question[1]))
+        logging.warning("User %s sent message %s, most closely matched question %s with probability %d",
+                        update.message.from_user.first_name, update.message.text, matched_question[0], matched_question[1])
         await context.bot.send_message(chat_id=update.effective_chat.id, text="סליחה, לא הצלחנו לענות על שאלתך. יש לפנות למפקידך או לרסר לקבלת מענה")
     await context.bot.send_message(chat_id=update.effective_chat.id, text="אוהבים, ג'ורדי ויובי 🇸🇭")
 
@@ -135,7 +151,7 @@ def main() -> None:
     app = ApplicationBuilder().token(config["token"]).build()
     start_handler = CommandHandler('start', start)
     new_question_conv_handler = ConversationHandler(
-        entry_points=[CommandHandler("new-question", new_question)],
+        entry_points=[CommandHandler("newquestion", new_question)],
         states={
             QUESTION: [
                 MessageHandler(filters.TEXT & ~filters.COMMAND, add_question)
@@ -145,7 +161,7 @@ def main() -> None:
                 CommandHandler("done", finish_add_question)
             ]
         },
-        fallbacks=[CommandHandler("cancel", cancel_add_question)]
+        fallbacks=[CommandHandler("cancel", cancel)]
     )
     questions_handler = MessageHandler(
         filters.TEXT & ~(filters.COMMAND), answer_questions)
